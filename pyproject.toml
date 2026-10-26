@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mailtester-ninja"
+version = "1.0.0"
+description = "Official client for the MailTester Ninja email verification API: check in real time if an email address is valid and deliverable."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "MailTester Ninja", email = "contact@mailtester.ninja" }]
+keywords = ["email", "email verification", "email validation", "email verifier", "email checker", "smtp", "catch-all", "disposable email", "mailtester"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Communications :: Email",
+  "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://mailtester.ninja"
+Documentation = "https://mailtester.ninja/api/"
+Source = "https://github.com/mailtester-ninja/mailtester-python"
+Issues = "https://github.com/mailtester-ninja/mailtester-python/issues"
+"OpenAPI specification" = "https://mailtester.ninja/openapi.json"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mailtester_ninja"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
