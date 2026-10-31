@@ -15,7 +15,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Iterator, Optional
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 DEFAULT_BASE_URL = "https://happy.mailtester.ninja"
 FREE_KEY = "free"  # keyless free tier: 10 checks a day per IP, one request every 30 seconds
@@ -31,7 +31,7 @@ class MailTesterError(Exception):
 
 
 class MailTesterKeyError(MailTesterError):
-    """The key is invalid or disabled (``code`` "--")."""
+    """The key is invalid or disabled (``code`` "--"), or ``find`` was called with a free key."""
 
 
 class MailTesterRateLimitError(MailTesterError):
@@ -95,6 +95,75 @@ class VerificationResult:
         )
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+@dataclass(frozen=True)
+class FindResult:
+    """Result of a Finder API search (``find``). Check ``found`` first.
+
+    ``code``: "ok" found, "ko" not found, "mb" uncertain (catch-all domain, personal email provider,
+    server not checked). ``message``: Accepted, Rejected, Catch-All, Limited, No MX, Webmail...
+    ``guess``: not verified; on a catch-all domain the most common format, for a full mailbox (Limited)
+    that address. ``permutations``: address formats tested, each one counted as a verification, even
+    when nothing is found. ``reason``: why nothing was found, in plain English.
+    """
+
+    code: str
+    message: str
+    found: bool
+    email: Optional[str] = None
+    guess: Optional[str] = None
+    first: str = ""
+    last: str = ""
+    domain: str = ""
+    mx: str = ""
+    permutations: int = 0
+    connections: int = 0
+    limit: int = 0
+    rate: int = 0
+    duration: float = 0.0
+    reason: Optional[str] = None
+    raw: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FindResult":
+        try:
+            duration = float(data.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        return cls(
+            code=str(data.get("code", "")),
+            message=str(data.get("message", "")),
+            found=data.get("found") is True,
+            email=data.get("email") or None,
+            guess=data.get("guess") or None,
+            first=str(data.get("first") or ""),
+            last=str(data.get("last") or ""),
+            domain=str(data.get("domain") or ""),
+            mx=str(data.get("mx") or ""),
+            permutations=_as_int(data.get("permutations")),
+            connections=_as_int(data.get("connections")),
+            limit=_as_int(data.get("limit")),
+            rate=_as_int(data.get("rate")),
+            duration=duration,
+            reason=data.get("reason") or None,
+            raw=dict(data),
+        )
+
+
+def _json_object(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
 def _retry_after(message: str) -> Optional[int]:
     match = re.search(r"retry in (\d+)\s*s", message, re.IGNORECASE)
     return int(match.group(1)) if match else None
@@ -119,20 +188,25 @@ class MailTester:
         """True on the free tier ("free" or a free token), limited to one request every 30 seconds."""
         return self.key == FREE_KEY or self.key.startswith("mtf_")
 
-    def _get(self, email: str) -> "tuple[int, str]":
-        query = urllib.parse.urlencode({"email": email.strip(), "key": self.key})
+    def _request(self, path: str, params: Dict[str, str]) -> "tuple[int, str, Dict[str, str]]":
         request = urllib.request.Request(
-            f"{self.base_url}/ninja?{query}",
+            f"{self.base_url}{path}?{urllib.parse.urlencode(params)}",
             headers={"Accept": "application/json", "User-Agent": f"mailtester-ninja-python/{__version__}"},
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return response.status, response.read().decode("utf-8", "replace")
+                headers = getattr(response, "headers", None) or {}
+                return response.status, response.read().decode("utf-8", "replace"), {k.lower(): v for k, v in dict(headers).items()}
         except urllib.error.HTTPError as err:
-            return err.code, err.read().decode("utf-8", "replace")
+            headers = err.headers or {}
+            return err.code, err.read().decode("utf-8", "replace"), {k.lower(): v for k, v in dict(headers).items()}
         except (urllib.error.URLError, OSError) as err:
             reason = getattr(err, "reason", err)
             raise MailTesterError(f"Network error: {reason}") from err
+
+    def _get(self, email: str) -> "tuple[int, str]":
+        status, text, _ = self._request("/ninja", {"email": email.strip(), "key": self.key})
+        return status, text
 
     def verify(self, email: str) -> VerificationResult:
         """Verify one address. Returns a verdict, raises a MailTesterError when there is none."""
@@ -153,6 +227,33 @@ class MailTester:
         if body.get("code") == "--":
             raise MailTesterKeyError(message, status)
         return VerificationResult.from_dict(body)
+
+    def find(self, first: str, last: str, domain: str) -> FindResult:
+        """Find a work email address from a first name, a last name and a company domain (Finder API, paid key).
+
+        The API tests the most common formats one by one (first.last, flast, first, firstlast, first_last,
+        f.last) and returns the first address the mail server accepts. Each format tested counts as one
+        verification. Returns a FindResult (check ``found``), raises a MailTesterError when the search did not run.
+        """
+        if self.is_free:
+            raise MailTesterKeyError("The Finder API needs a paid key: https://mailtester.ninja/verify-emails-unlimited/", 403)
+        params = {"first": first.strip(), "last": last.strip(), "domain": domain.strip(), "key": self.key}
+        status, text, headers = self._request("/find", params)
+        body = _json_object(text)
+        reason = str(body.get("reason") or "") if body else ""
+        message = reason or (str(body.get("message", "")) if body else text.strip())
+        if status == 429:
+            wait = _as_int(headers.get("retry-after"))
+            raise MailTesterRateLimitError(message, wait if wait > 0 else None)
+        if status == 403 and body is not None:
+            raise MailTesterKeyError(message, 403)
+        if status >= 400:
+            raise MailTesterError(message or f"HTTP {status}", status)
+        if body is None:
+            raise MailTesterError("Unexpected response from the API", status)
+        if body.get("code") == "--":
+            raise MailTesterKeyError(message, status)
+        return FindResult.from_dict(body)
 
     def is_deliverable(self, email: str) -> bool:
         """True only when the address is clearly valid and deliverable ("ok")."""

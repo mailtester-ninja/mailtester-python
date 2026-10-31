@@ -1,6 +1,6 @@
 # MailTester Ninja for Python
 
-Official client for the [MailTester Ninja](https://mailtester.ninja) email verification API. Check in real time whether an email address is valid and deliverable: each address is checked against the recipient's mail server, and nothing is stored.
+Official client for the [MailTester Ninja](https://mailtester.ninja) email verification API. Check in real time whether an email address is valid and deliverable: each address is checked against the recipient's mail server, and nothing is stored. With a paid key, `find` also looks up a person's work email from their name and company domain.
 
 - No dependencies (standard library only), typed, Python 3.9+
 - Free to try: no signup with `key="free"`, or a [free API token](https://mailtester.ninja/free-email-verification-api/) for 50 checks a day
@@ -44,14 +44,32 @@ for email, result, error in mt.verify_many(["info@apple.com", "someone@example.c
         print(email, result.code, result.message)
 ```
 
+## Find a work email (paid key)
+
+`find` calls the Finder API: it tests the most common address formats one by one (first.last, flast, first, firstlast, first_last, f.last) and returns the first one the mail server accepts.
+
+```python
+r = mt.find("Jean-Pierre", "De La Tour", "example.com")
+if r.found:
+    print(r.email)             # an address the mail server just accepted
+else:
+    print(r.message, r.guess)  # e.g. Catch-All and the most common format
+print(r.permutations)          # formats tested, each one counted as a verification
+```
+
+- Each format tested counts as one verification against your daily limit, even when nothing is found. The search paces itself within the rate of your key.
+- On a catch-all domain nothing can be confirmed: `found` is `False` and `guess` holds the most common format.
+- Personal email providers such as gmail.com are not searched (`message` is `Webmail`).
+- A free key raises `MailTesterKeyError`; over the rate of your key, `MailTesterRateLimitError` carries `retry_after`.
+
 ## Errors
 
 An error is never a verdict: do not drop an address because of it.
 
 | Exception | When |
 |-----------|------|
-| `MailTesterKeyError` | The key is invalid or disabled. |
-| `MailTesterRateLimitError` | A limit was reached (HTTP 429). `retry_after` is set on the free tier. |
+| `MailTesterKeyError` | The key is invalid or disabled, or `find` was called with a free key. |
+| `MailTesterRateLimitError` | A limit was reached (HTTP 429). `retry_after` is set on the free tier and by `find`. |
 | `MailTesterError` | Any other HTTP or network error (`status` when there is one). |
 
 ## Keys and limits

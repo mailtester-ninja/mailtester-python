@@ -6,6 +6,7 @@ import urllib.error
 import pytest
 
 from mailtester_ninja import (
+    FindResult,
     MailTester,
     MailTesterError,
     MailTesterKeyError,
@@ -124,6 +125,58 @@ def test_verify_many_retries_after_free_limit(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     out = list(MailTester("free").verify_many(["info@apple.com"], delay=0))
     assert len(out) == 1 and out[0][1].code == "ok"
+
+
+FOUND = {"code": "ok", "message": "Accepted", "found": True, "email": "jane.doe@example.com", "guess": None,
+         "first": "Jane", "last": "Doe", "domain": "example.com", "mx": "mx.example.com", "permutations": 1,
+         "connections": 1, "limit": 100000, "rate": 1, "duration": 1.2, "reason": None}
+
+
+def fake_request(status, body, headers=None, calls=None):
+    def _request(self, path, params):
+        if calls is not None:
+            calls.append((path, params))
+        return status, body, headers or {}
+    return _request
+
+
+def test_find_returns_result(monkeypatch):
+    calls = []
+    monkeypatch.setattr(MailTester, "_request", fake_request(200, json.dumps(FOUND), calls=calls))
+    r = MailTester("sub_1").find(" Jean-Pierre ", "De La Tour", "example.com")
+    assert isinstance(r, FindResult) and r.found and r.email == "jane.doe@example.com" and r.permutations == 1
+    assert calls == [("/find", {"first": "Jean-Pierre", "last": "De La Tour", "domain": "example.com", "key": "sub_1"})]
+
+
+def test_find_not_found_with_guess(monkeypatch):
+    body = dict(FOUND, code="mb", message="Catch-All", found=False, email=None, guess="jane.doe@example.com", reason="catch-all")
+    monkeypatch.setattr(MailTester, "_request", fake_request(200, json.dumps(body)))
+    r = MailTester("sub_1").find("Jane", "Doe", "example.com")
+    assert not r.found and r.email is None and r.guess == "jane.doe@example.com"
+
+
+def test_find_refuses_free_key(monkeypatch):
+    calls = []
+    monkeypatch.setattr(MailTester, "_request", fake_request(200, json.dumps(FOUND), calls=calls))
+    with pytest.raises(MailTesterKeyError):
+        MailTester("free").find("Jane", "Doe", "example.com")
+    assert calls == []
+
+
+def test_find_rate_limit_uses_retry_after(monkeypatch):
+    body = dict(FOUND, code="--", message="Too Many Requests", found=False, email=None, permutations=0, reason="The key is at its maximum rate.")
+    monkeypatch.setattr(MailTester, "_request", fake_request(429, json.dumps(body), {"retry-after": "10"}))
+    with pytest.raises(MailTesterRateLimitError) as e:
+        MailTester("sub_1").find("Jane", "Doe", "example.com")
+    assert e.value.retry_after == 10 and "maximum rate" in e.value.message
+
+
+def test_find_invalid_parameters(monkeypatch):
+    body = dict(FOUND, code="--", message="Invalid parameters", found=False, email=None, permutations=0, reason="Send first, last and domain.")
+    monkeypatch.setattr(MailTester, "_request", fake_request(400, json.dumps(body)))
+    with pytest.raises(MailTesterError) as e:
+        MailTester("sub_1").find("", "Doe", "example.com")
+    assert e.value.status == 400 and e.value.message == "Send first, last and domain."
 
 
 @pytest.mark.skipif(os.environ.get("MAILTESTER_LIVE") != "1", reason="live test: set MAILTESTER_LIVE=1")

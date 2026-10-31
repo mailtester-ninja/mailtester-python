@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mailtester-ninja"
-version = "1.0.0"
+version = "1.1.0"
 description = "Official client for the MailTester Ninja email verification API: check in real time if an email address is valid and deliverable."
 readme = "README.md"
 requires-python = ">=3.9"

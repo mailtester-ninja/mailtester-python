@@ -3,6 +3,7 @@
 from .client import (
     DEFAULT_BASE_URL,
     FREE_KEY,
+    FindResult,
     MailTester,
     MailTesterError,
     MailTesterKeyError,
@@ -14,6 +15,7 @@ from .client import (
 __all__ = [
     "DEFAULT_BASE_URL",
     "FREE_KEY",
+    "FindResult",
     "MailTester",
     "MailTesterError",
     "MailTesterKeyError",
