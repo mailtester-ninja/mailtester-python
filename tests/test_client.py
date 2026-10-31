@@ -127,8 +127,10 @@ def test_verify_many_retries_after_free_limit(monkeypatch):
     assert len(out) == 1 and out[0][1].code == "ok"
 
 
-FOUND = {"code": "ok", "message": "Accepted", "found": True, "email": "jane.doe@example.com", "guess": None,
-         "first": "Jane", "last": "Doe", "domain": "example.com", "mx": "mx.example.com", "permutations": 1,
+FOUND = {"code": "ok", "message": "Accepted", "found": True, "email": "jane.doe@example.com", "format": "first.last",
+         "confidence": "high", "guess": None, "first": "Jane", "last": "Doe", "domain": "example.com",
+         "mx": "mx.example.com", "permutations": 1,
+         "tested": [{"email": "jane.doe@example.com", "code": "ok", "message": "Accepted"}],
          "connections": 1, "limit": 100000, "rate": 1, "duration": 1.2, "reason": None}
 
 
@@ -145,6 +147,8 @@ def test_find_returns_result(monkeypatch):
     monkeypatch.setattr(MailTester, "_request", fake_request(200, json.dumps(FOUND), calls=calls))
     r = MailTester("sub_1").find(" Jean-Pierre ", "De La Tour", "example.com")
     assert isinstance(r, FindResult) and r.found and r.email == "jane.doe@example.com" and r.permutations == 1
+    assert r.format == "first.last" and r.confidence == "high"
+    assert r.tested == [{"email": "jane.doe@example.com", "code": "ok", "message": "Accepted"}]
     assert calls == [("/find", {"first": "Jean-Pierre", "last": "De La Tour", "domain": "example.com", "key": "sub_1"})]
 
 

@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 __version__ = "1.1.0"
 
@@ -108,21 +108,28 @@ class FindResult:
 
     ``code``: "ok" found, "ko" not found, "mb" uncertain (catch-all domain, personal email provider,
     server not checked). ``message``: Accepted, Rejected, Catch-All, Limited, No MX, Webmail...
+    ``format``: pattern of the returned address (email, or guess when not found): first.last, flast,
+    first, firstlast, first_last or f.last. ``confidence`` (address found only): "high" with the first
+    and last name in it, "medium" with an initial (a namesake may share it), "low" with the first name only.
     ``guess``: not verified; on a catch-all domain the most common format, for a full mailbox (Limited)
     that address. ``permutations``: address formats tested, each one counted as a verification, even
-    when nothing is found. ``reason``: why nothing was found, in plain English.
+    when nothing is found. ``tested``: every address tested, in order, with its ``code`` and ``message``.
+    ``reason``: why nothing was found, in plain English.
     """
 
     code: str
     message: str
     found: bool
     email: Optional[str] = None
+    format: Optional[str] = None
+    confidence: Optional[str] = None
     guess: Optional[str] = None
     first: str = ""
     last: str = ""
     domain: str = ""
     mx: str = ""
     permutations: int = 0
+    tested: List[Dict[str, str]] = field(default_factory=list, compare=False)
     connections: int = 0
     limit: int = 0
     rate: int = 0
@@ -141,12 +148,16 @@ class FindResult:
             message=str(data.get("message", "")),
             found=data.get("found") is True,
             email=data.get("email") or None,
+            format=data.get("format") or None,
+            confidence=data.get("confidence") or None,
             guess=data.get("guess") or None,
             first=str(data.get("first") or ""),
             last=str(data.get("last") or ""),
             domain=str(data.get("domain") or ""),
             mx=str(data.get("mx") or ""),
             permutations=_as_int(data.get("permutations")),
+            tested=[{"email": str(t.get("email", "")), "code": str(t.get("code", "")), "message": str(t.get("message", ""))}
+                    for t in (data.get("tested") or []) if isinstance(t, dict)],
             connections=_as_int(data.get("connections")),
             limit=_as_int(data.get("limit")),
             rate=_as_int(data.get("rate")),

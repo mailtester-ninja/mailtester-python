@@ -55,9 +55,11 @@ if r.found:
 else:
     print(r.message, r.guess)  # e.g. Catch-All and the most common format
 print(r.permutations)          # formats tested, each one counted as a verification
+print(r.format, r.confidence)  # e.g. flast medium: an initial, a namesake may share it
 ```
 
 - Each format tested counts as one verification against your daily limit, even when nothing is found. The search paces itself within the rate of your key.
+- `confidence` tells how sure the address is to belong to this person: `high` when it holds the first and last name, `medium` with an initial, `low` with the first name only. `tested` lists every address checked, with its verdict.
 - On a catch-all domain nothing can be confirmed: `found` is `False` and `guess` holds the most common format.
 - Personal email providers such as gmail.com are not searched (`message` is `Webmail`).
 - A free key raises `MailTesterKeyError`; over the rate of your key, `MailTesterRateLimitError` carries `retry_after`.
